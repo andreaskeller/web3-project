@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 export default function Home() {
   const [allVideos, setAllVideos] = useState([]);
   const contractABI = abi.abi;
-  const contractAddress = "0x715d3bed36c37b6dBA3004370186cB1dC0A5821A";
+  const contractAddress = "0xdB2b5164dFcc4F53E7b3db1B3b9bC4902EDb3fCc";
   const [currentAccount, setCurrentAccount] = useState("");
   const [error, setError] = useState("");
   const [videoLink, setVideoLink] = useState("");
@@ -120,7 +120,9 @@ export default function Home() {
         let count = await contract.getTotalVideos();
         console.log("Retrieved total videos count...", count.toNumber());
 
-        const txn = await contract.addVideo(strippedVideoLink);
+        const txn = await contract.addVideo(strippedVideoLink, {
+          gasLimit: 300000,
+        });
         console.log("Mining...", txn.hash);
         setMining(true);
 
@@ -132,7 +134,7 @@ export default function Home() {
         console.log("Retrieved total videos count...", count.toNumber());
 
         setVideoLink("");
-        getAllVideos();
+        // getAllVideos();
       } else {
         console.log("Ethereum object doesn't exist!");
       }
@@ -149,7 +151,35 @@ export default function Home() {
     checkIfWalletIsConnected();
   }, []);
 
-  console.log(allVideos);
+  useEffect(() => {
+    let contract;
+
+    const onNewVideoAdded = (from, timestamp, videoLink) => {
+      console.log("NewVideoAdded", from, timestamp, videoLink);
+      setAllVideos((prevState) => [
+        ...prevState,
+        {
+          address: from,
+          timestamp: new Date(timestamp * 1000),
+          link: videoLink,
+        },
+      ]);
+    };
+
+    if (window.ethereum) {
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+      const signer = provider.getSigner();
+
+      contract = new ethers.Contract(contractAddress, contractABI, signer);
+      contract.on("NewVideoAdded", onNewVideoAdded);
+    }
+
+    return () => {
+      if (contract) {
+        contract.off("NewVideoAdded", onNewVideoAdded);
+      }
+    };
+  }, []);
 
   return (
     <div className="my-16 px-4">
