@@ -1,11 +1,15 @@
-import abi from "lib/WavePortal.json";
+import abi from "lib/BestYouTubeVideos.json";
 import { ethers } from "ethers";
+import { format } from "date-fns";
 import { useEffect, useState } from "react";
 
 export default function Home() {
+  const [allVideos, setAllVideos] = useState([]);
   const contractABI = abi.abi;
-  const contractAddress = "0xcE7940e770eB705D89ff5d0520E13f30de20FadA";
+  const contractAddress = "0x715d3bed36c37b6dBA3004370186cB1dC0A5821A";
   const [currentAccount, setCurrentAccount] = useState("");
+  const [error, setError] = useState("");
+  const [videoLink, setVideoLink] = useState("");
   const [mining, setMining] = useState(false);
 
   async function checkIfWalletIsConnected() {
@@ -26,6 +30,7 @@ export default function Home() {
         const account = accounts[0];
         console.log("Found an authorized account:", account);
         setCurrentAccount(account);
+        getAllVideos();
       } else {
         console.log("No authorized account found");
       }
@@ -49,37 +54,36 @@ export default function Home() {
 
       console.log("Connected", accounts[0]);
       setCurrentAccount(accounts[0]);
+      getAllVideos();
     } catch (error) {
       console.log(error);
     }
   }
 
-  async function sendMessage() {
+  async function getAllVideos() {
     try {
       const { ethereum } = window;
 
       if (ethereum) {
         const provider = new ethers.providers.Web3Provider(ethereum);
         const signer = provider.getSigner();
-        const wavePortalContract = new ethers.Contract(
+        const contract = new ethers.Contract(
           contractAddress,
           contractABI,
           signer
         );
 
-        let count = await wavePortalContract.getTotalWaves();
-        console.log("Retrieved total message count...", count.toNumber());
+        const videos = await contract.getAllVideos();
 
-        const waveTxn = await wavePortalContract.wave();
-        console.log("Mining...", waveTxn.hash);
-        setMining(true);
+        console.log(videos);
 
-        await waveTxn.wait();
-        setMining(false);
-        console.log("Mined -- ", waveTxn.hash);
-
-        count = await wavePortalContract.getTotalWaves();
-        console.log("Retrieved total wave count...", count.toNumber());
+        setAllVideos(
+          videos.map((video) => ({
+            address: video.sender,
+            timestamp: new Date(video.timestamp * 1000),
+            link: video.link,
+          }))
+        );
       } else {
         console.log("Ethereum object doesn't exist!");
       }
@@ -88,23 +92,88 @@ export default function Home() {
     }
   }
 
+  async function addVideo() {
+    setError("");
+
+    try {
+      if (!videoLink.includes("youtube")) {
+        return setError(
+          "You need to provide a YouTube link, e.g. https://www.youtube.com/watch?v=a0osIaAOFSE"
+        );
+      }
+
+      const strippedVideoLink = videoLink.includes("&")
+        ? videoLink.substring(0, videoLink.indexOf("&"))
+        : videoLink;
+
+      const { ethereum } = window;
+
+      if (ethereum) {
+        const provider = new ethers.providers.Web3Provider(ethereum);
+        const signer = provider.getSigner();
+        const contract = new ethers.Contract(
+          contractAddress,
+          contractABI,
+          signer
+        );
+
+        let count = await contract.getTotalVideos();
+        console.log("Retrieved total videos count...", count.toNumber());
+
+        const txn = await contract.addVideo(strippedVideoLink);
+        console.log("Mining...", txn.hash);
+        setMining(true);
+
+        await txn.wait();
+        setMining(false);
+        console.log("Mined -- ", txn.hash);
+
+        count = await contract.getTotalVideos();
+        console.log("Retrieved total videos count...", count.toNumber());
+
+        setVideoLink("");
+        getAllVideos();
+      } else {
+        console.log("Ethereum object doesn't exist!");
+      }
+    } catch (error) {
+      console.log(error);
+    }
+  }
+
+  function handleChange(e) {
+    setVideoLink(e.target.value);
+  }
+
   useEffect(() => {
     checkIfWalletIsConnected();
   }, []);
 
+  console.log(allVideos);
+
   return (
-    <div className="flex justify-center w-full mt-16">
-      <div className="flex flex-col justify-center max-w-2xl">
-        <div className="text-center text-2xl font-semibold">👋 Hey there!</div>
+    <div className="my-16 px-4">
+      <div className="flex flex-col justify-center max-w-2xl mx-auto">
+        <div className="text-center text-2xl font-semibold">
+          Best YouTube videos
+        </div>
 
         <div className="text-center text-gray-400 mt-4">
-          I am Andreas and I'm learning how to build a web3 app. Connect your
-          Ethereum wallet and send me a message!
+          Send me your best YouTube videos!
         </div>
+
+        {error && <div className="mt-4 text-red-500">{error}</div>}
+
+        <input
+          className="mt-4 p-2 border border-gray-200 hover:border-gray-400 focused:border-gray-400"
+          type="text"
+          onChange={handleChange}
+          value={videoLink}
+        />
 
         <button
           className="cursor-pointer mt-4 p-2 border-0 rounded-md bg-gray-100"
-          onClick={sendMessage}
+          onClick={addVideo}
         >
           {mining ? (
             <>
@@ -128,10 +197,10 @@ export default function Home() {
                   d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                 ></path>
               </svg>{" "}
-              Saving message ...
+              Saving video ...
             </>
           ) : (
-            "Send message"
+            "Add your favorite video"
           )}
         </button>
 
@@ -143,6 +212,35 @@ export default function Home() {
             Connect Wallet
           </button>
         )}
+
+        <div className="mt-8 space-y-6 w-full">
+          {allVideos
+            .filter(({ link }) => link?.includes("youtube"))
+            .reverse()
+            .map(({ link, address, timestamp }, index) => {
+              return (
+                <div key={index}>
+                  <div className="flex justify-between">
+                    {format(timestamp, "P")}{" "}
+                    <div>
+                      {address.substring(0, 6)}...
+                      {address.substring(address.length - 4, address.length)}
+                    </div>
+                  </div>
+                  <div className="aspect-w-16 aspect-h-9">
+                    <iframe
+                      src={`https://www.youtube.com/embed/${link.substring(
+                        link.indexOf("v=") + 2
+                      )}`}
+                      frameBorder="0"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen
+                    ></iframe>
+                  </div>
+                </div>
+              );
+            })}
+        </div>
       </div>
     </div>
   );
